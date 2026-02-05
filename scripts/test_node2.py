@@ -1,5 +1,9 @@
 import sys
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Add src to python path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -15,6 +19,10 @@ def test_explanation():
         {
             "prompt": "Summarize the history of AI in 5 words.",
             "output": "AI evolved from rules to learning."
+        },
+        {
+            "prompt": "What are the common symptoms of flu?",
+            "output": "Fever, cough, sore throat, runny nose."
         }
     ]
 

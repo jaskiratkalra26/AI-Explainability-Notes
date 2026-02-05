@@ -27,6 +27,13 @@ def extract_metadata(prompt: str, output: str) -> Dict[str, str]:
        - politics
        - technology
        - education
+       - healthcare
+       - finance
+       - science
+       - legal
+       - history
+       - entertainment
+       - sports
        - general
        - other
        
@@ -85,46 +92,80 @@ def extract_metadata(prompt: str, output: str) -> Dict[str, str]:
 
 def _fallback_rule_based_extraction(prompt: str, output: str) -> Dict[str, str]:
     """
-    Fallback method using simple heuristics if LLM fails.
+    Fallback method using robust keyword scoring if LLM fails.
     """
     prompt_lower = prompt.lower()
     output_lower = output.lower()
     
-    # 1. Determine Task Type
-    if any(word in prompt_lower for word in ['summarize', 'summary', 'brief', 'shorten']):
-        task_type = 'summarization'
-    elif any(word in prompt_lower for word in ['what', 'who', 'when', 'where', 'define', 'which', 'classification', 'type']):
-        task_type = 'factual'
-    elif any(word in prompt_lower for word in ['why', 'how', 'explain', 'reason']):
-        task_type = 'reasoning'
-    elif any(word in prompt_lower for word in ['opinion', 'think', 'believe']):
-        task_type = 'opinion'
-    else:
-        task_type = 'general'
+    # Helper to tokenize and score
+    def get_score(text: str, keywords: list) -> int:
+        score = 0
+        for kw in keywords:
+            # Create a regex to match the keyword with potential suffixes
+            # This is a simple heuristic for stemming
+            pattern = r'\b' + re.escape(kw) + r'(?:s|es|ing|ed|ment|tion|er|or)?\b'
+            if re.search(pattern, text):
+                score += 1
+        return score
 
-    # 2. Determine Domain
-    if any(word in prompt_lower for word in ['president', 'government', 'law', 'policy', 'minister', 'vote', 'election', 'polity', 'federal', 'constitution', 'india', 'court']):
-        domain = 'politics'
-    elif any(word in prompt_lower for word in ['code', 'python', 'java', 'computer', 'software', 'internet', 'technology', 'ai', 'data']):
-        domain = 'technology'
-    elif any(word in prompt_lower for word in ['school', 'university', 'student', 'teacher', 'learn', 'education']):
-        domain = 'education'
-    else:
-        domain = 'general'
-        
-    # 3. Determine Answer Style
+    # --- 1. Determine Task Type ---
+    task_keywords = {
+        'summarization': ['summarize', 'summary', 'brief', 'shorten', 'digest', 'abstract', 'tl;dr', 'tldr', 'overview'],
+        'factual': ['what', 'who', 'when', 'where', 'which', 'define', 'definition', 'list', 'name', 'identify', 'state', 'describe', 'classification', 'type'],
+        'reasoning': ['why', 'how', 'explain', 'reason', 'cause', 'effect', 'analyze', 'compare', 'contrast', 'justify', 'evaluate'],
+        'opinion': ['opinion', 'think', 'believe', 'view', 'perspective', 'thoughts', 'feel', 'suggest', 'recommend', 'advice']
+    }
+    
+    best_task = 'general'
+    max_task_score = 0
+    
+    for task, keywords in task_keywords.items():
+        score = get_score(prompt_lower, keywords)
+        if score > max_task_score:
+            max_task_score = score
+            best_task = task
+            
+    # Default to factual if 'what' etc are present but score is low, or keep general
+    # If no keywords matched, it remains 'general'
+
+    # --- 2. Determine Domain ---
+    domain_keywords = {
+        'politics': ['president', 'government', 'law', 'policy', 'minister', 'vote', 'election', 'polity', 'federal', 'constitution', 'india', 'court', 'democracy', 'parliament', 'legislature'],
+        'technology': ['code', 'python', 'java', 'computer', 'software', 'internet', 'technology', 'ai', 'data', 'algorithm', 'app', 'digital', 'cyber', 'robot', 'cloud', 'server'],
+        'education': ['school', 'university', 'student', 'teacher', 'learn', 'education', 'exam', 'class', 'course', 'degree', 'study', 'academic', 'college'],
+        'healthcare': ['health', 'doctor', 'medicine', 'virus', 'biotech', 'hospital', 'patient', 'treatment', 'symptom', 'disease', 'cure', 'medical', 'clinic', 'therapy'],
+        'finance': ['money', 'finance', 'economy', 'stock', 'market', 'bank', 'invest', 'tax', 'currency', 'business', 'profit', 'revenue', 'trade', 'loan'],
+        'science': ['science', 'physics', 'chemistry', 'biology', 'space', 'research', 'experiment', 'lab', 'planet', 'universe', 'atom', 'molecule', 'energy', 'gravity'],
+        'legal': ['legal', 'lawyer', 'judge', 'court', 'sue', 'rights', 'contract', 'statute', 'regulation', 'attorney', 'justice', 'verdict', 'litigation'],
+        'history': ['history', 'historical', 'ancient', 'war', 'century', 'past', 'civilization', 'empire', 'kingdom', 'age', 'era', 'revolution', 'archaeology'],
+        'entertainment': ['movie', 'music', 'art', 'song', 'film', 'actor', 'celebrity', 'cinema', 'drama', 'theatre', 'concert', 'band', 'album'],
+        'sports': ['sport', 'game', 'player', 'team', 'match', 'score', 'win', 'lose', 'athlete', 'tournament', 'championship', 'olympic', 'league', 'ball']
+    }
+
+    best_domain = 'general'
+    max_domain_score = 0
+    
+    for domain, keywords in domain_keywords.items():
+        score = get_score(prompt_lower, keywords)
+        if score > max_domain_score:
+            max_domain_score = score
+            best_domain = domain
+
+    # --- 3. Determine Answer Style ---
+    # Based on output characteristics
     word_count = len(output.split())
-    if word_count < 20: 
+    
+    if word_count < 30:
         answer_style = 'concise'
-    elif "is defined as" in output_lower or "refers to" in output_lower:
+    elif "is defined as" in output_lower or "refers to" in output_lower or output_lower.startswith("definition:"):
         answer_style = 'definition-based'
-    elif word_count > 100:
+    elif word_count > 120 or "\n- " in output or "\n1. " in output: # List or long text
         answer_style = 'descriptive'
     else:
         answer_style = 'explanatory'
 
     return {
-        "task_type": task_type,
-        "domain": domain,
+        "task_type": best_task,
+        "domain": best_domain,
         "answer_style": answer_style
     }
