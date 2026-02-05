@@ -1,19 +1,13 @@
 from typing import List
+from src.utils import load_config
 
-FORBIDDEN_PHRASES = [
-    "I thought",
-    "I reasoned",
-    "my internal weights",
-    "training data",
-    "neural network",
-    "transformer layers",
-    "chain of thought",
-    "because I believe",
-    "model parameters",
-    "internal state"
-]
+# Load config once at module level (or could do inside functions)
+config = load_config()
+validator_config = config.get('validator', {})
 
-DEFAULT_FALLBACK = "This response was generated based on the prompt intent and output characteristics."
+FORBIDDEN_PHRASES = validator_config.get('forbidden_phrases', [])
+DEFAULT_FALLBACK = validator_config.get('default_fallback', "This response was generated based on the prompt intent and output characteristics.")
+MAX_SENTENCES = validator_config.get('max_sentences', 3)
 
 def validate_explanation(explanation: str, trace: List[str]) -> bool:
     """
@@ -24,7 +18,7 @@ def validate_explanation(explanation: str, trace: List[str]) -> bool:
     
     # Check 1: Forbidden phrases (Internal Reasoning Claims)
     for phrase in FORBIDDEN_PHRASES:
-        if phrase in combined_text:
+        if phrase.lower() in combined_text:
             return False
             
     # Check 2: Length Constraints (Explanation should be short)
@@ -33,7 +27,7 @@ def validate_explanation(explanation: str, trace: List[str]) -> bool:
     # Removing empty strings resulting from split
     sentences = [s for s in sentences if s.strip()]
     
-    if len(sentences) > 3:
+    if len(sentences) > MAX_SENTENCES:
         return False
         
     return True

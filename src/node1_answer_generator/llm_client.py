@@ -1,20 +1,16 @@
 import os
-import yaml
 import google.generativeai as genai
-from typing import Optional
 
-# Determine the path to the configuration file relative to this file
-# Structure: src/node1_answer_generator/llm_client.py -> ../../Config/config.yaml
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-CONFIG_PATH = os.path.join(BASE_DIR, 'Config', 'config.yaml')
+try:
+    # Attempt to import from src (if running from root or src is a package)
+    from src.config import config as PROJECT_CONFIG
+except ImportError:
+    # Attempt to import directly if src is in PYTHONPATH
+    import config as PROJECT_CONFIG
 
 def _load_config():
-    """Loads configuration from the yaml file."""
-    if not os.path.exists(CONFIG_PATH):
-        raise FileNotFoundError(f"Configuration file not found at: {CONFIG_PATH}")
-    
-    with open(CONFIG_PATH, 'r') as f:
-        return yaml.safe_load(f)
+    """Loads configuration."""
+    return PROJECT_CONFIG
 
 def _get_api_key(config: dict) -> str:
     """Retrieves the API key from environment variables based on config."""
@@ -45,8 +41,15 @@ def call_llm(prompt: str) -> str:
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel(model_name)
         
+        # Get generation config from settings
+        gen_config_dict = config.get('gemini', {}).get('generation_config', {})
+        generation_config = genai.types.GenerationConfig(
+            max_output_tokens=gen_config_dict.get('max_output_tokens', 300),
+            temperature=gen_config_dict.get('temperature', 0.7)
+        )
+        
         # Determine generation config if needed, keeping it simple for now
-        response = model.generate_content(prompt)
+        response = model.generate_content(prompt, generation_config=generation_config)
         
         if not response.text:
             return ""

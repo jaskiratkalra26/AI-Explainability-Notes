@@ -1,3 +1,4 @@
 google-generativeai
-pyyaml
 python-dotenv
+fastapi
+uvicorn

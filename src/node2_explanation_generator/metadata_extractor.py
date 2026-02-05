@@ -2,6 +2,11 @@ import json
 import re
 from typing import Dict
 from node1_answer_generator.llm_client import call_llm
+from src.utils import load_config
+
+# Load config
+config = load_config()
+extractor_config = config.get('metadata_extractor', {})
 
 def extract_metadata(prompt: str, output: str) -> Dict[str, str]:
     """
@@ -10,50 +15,7 @@ def extract_metadata(prompt: str, output: str) -> Dict[str, str]:
     Returns:
         Dict with keys: 'task_type', 'domain', 'answer_style'
     """
-    system_instruction = """
-    You are a metadata extraction engine. Your job is to analyze the following USER PROMPT and AI OUTPUT
-    and classify them into specific categories.
-    
-    Return ONLY a JSON object with the following keys and valid values:
-    
-    1. "task_type":
-       - factual (asking for facts, definitions, specific info)
-       - summarization (requesting a summary or shortening)
-       - reasoning (asking why, how, or complex explanation)
-       - opinion (asking for views or thoughts)
-       - general (chit-chat or other)
-       
-    2. "domain":
-       - politics
-       - technology
-       - education
-       - healthcare
-       - finance
-       - science
-       - legal
-       - history
-       - entertainment
-       - sports
-       - general
-       - other
-       
-    3. "answer_style":
-       - definition-based (starts with a definition or defines something)
-       - descriptive (long, detailed response)
-       - concise (short, direct answer)
-       - explanatory (explains a concept clearly)
-
-    Input Context:
-    User Prompt: {user_prompt}
-    AI Output: {ai_output}
-    
-    Response format:
-    {{
-        "task_type": "...",
-        "domain": "...",
-        "answer_style": "..."
-    }}
-    """
+    system_instruction = extractor_config.get('system_instruction', "")
     
     formatted_prompt = system_instruction.format(user_prompt=prompt, ai_output=output)
     
@@ -109,12 +71,7 @@ def _fallback_rule_based_extraction(prompt: str, output: str) -> Dict[str, str]:
         return score
 
     # --- 1. Determine Task Type ---
-    task_keywords = {
-        'summarization': ['summarize', 'summary', 'brief', 'shorten', 'digest', 'abstract', 'tl;dr', 'tldr', 'overview'],
-        'factual': ['what', 'who', 'when', 'where', 'which', 'define', 'definition', 'list', 'name', 'identify', 'state', 'describe', 'classification', 'type'],
-        'reasoning': ['why', 'how', 'explain', 'reason', 'cause', 'effect', 'analyze', 'compare', 'contrast', 'justify', 'evaluate'],
-        'opinion': ['opinion', 'think', 'believe', 'view', 'perspective', 'thoughts', 'feel', 'suggest', 'recommend', 'advice']
-    }
+    task_keywords = extractor_config.get('task_keywords', {})
     
     best_task = 'general'
     max_task_score = 0
@@ -129,18 +86,7 @@ def _fallback_rule_based_extraction(prompt: str, output: str) -> Dict[str, str]:
     # If no keywords matched, it remains 'general'
 
     # --- 2. Determine Domain ---
-    domain_keywords = {
-        'politics': ['president', 'government', 'law', 'policy', 'minister', 'vote', 'election', 'polity', 'federal', 'constitution', 'india', 'court', 'democracy', 'parliament', 'legislature'],
-        'technology': ['code', 'python', 'java', 'computer', 'software', 'internet', 'technology', 'ai', 'data', 'algorithm', 'app', 'digital', 'cyber', 'robot', 'cloud', 'server'],
-        'education': ['school', 'university', 'student', 'teacher', 'learn', 'education', 'exam', 'class', 'course', 'degree', 'study', 'academic', 'college'],
-        'healthcare': ['health', 'doctor', 'medicine', 'virus', 'biotech', 'hospital', 'patient', 'treatment', 'symptom', 'disease', 'cure', 'medical', 'clinic', 'therapy'],
-        'finance': ['money', 'finance', 'economy', 'stock', 'market', 'bank', 'invest', 'tax', 'currency', 'business', 'profit', 'revenue', 'trade', 'loan'],
-        'science': ['science', 'physics', 'chemistry', 'biology', 'space', 'research', 'experiment', 'lab', 'planet', 'universe', 'atom', 'molecule', 'energy', 'gravity'],
-        'legal': ['legal', 'lawyer', 'judge', 'court', 'sue', 'rights', 'contract', 'statute', 'regulation', 'attorney', 'justice', 'verdict', 'litigation'],
-        'history': ['history', 'historical', 'ancient', 'war', 'century', 'past', 'civilization', 'empire', 'kingdom', 'age', 'era', 'revolution', 'archaeology'],
-        'entertainment': ['movie', 'music', 'art', 'song', 'film', 'actor', 'celebrity', 'cinema', 'drama', 'theatre', 'concert', 'band', 'album'],
-        'sports': ['sport', 'game', 'player', 'team', 'match', 'score', 'win', 'lose', 'athlete', 'tournament', 'championship', 'olympic', 'league', 'ball']
-    }
+    domain_keywords = extractor_config.get('domain_keywords', {})
 
     best_domain = 'general'
     max_domain_score = 0
@@ -153,13 +99,17 @@ def _fallback_rule_based_extraction(prompt: str, output: str) -> Dict[str, str]:
 
     # --- 3. Determine Answer Style ---
     # Based on output characteristics
+    style_thresholds = extractor_config.get('style_thresholds', {})
+    concise_max = style_thresholds.get('concise_max_words', 30)
+    descriptive_min = style_thresholds.get('descriptive_min_words', 120)
+    
     word_count = len(output.split())
     
-    if word_count < 30:
+    if word_count < concise_max:
         answer_style = 'concise'
     elif "is defined as" in output_lower or "refers to" in output_lower or output_lower.startswith("definition:"):
         answer_style = 'definition-based'
-    elif word_count > 120 or "\n- " in output or "\n1. " in output: # List or long text
+    elif word_count > descriptive_min or "\n- " in output or "\n1. " in output: # List or long text
         answer_style = 'descriptive'
     else:
         answer_style = 'explanatory'

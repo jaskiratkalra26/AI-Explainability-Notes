@@ -1,1 +1,23 @@
 .env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# VS Code
+.vscode/
+
+# Environments
+.venv
+env/
+venv/
+ENV/
+
+# Logs
+*.log
+
+# Build
+build/
+dist/
+*.spec
